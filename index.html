@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>联机围棋</title>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, 'Segoe UI', sans-serif;
+    background: #1a1a2e;
+    color: #eee;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 20px;
+  }
+  .container {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 1100px;
+  }
+  /* 左侧面板 */
+  .side-panel {
+    width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .card {
+    background: #16213e;
+    border-radius: 12px;
+    padding: 18px;
+    border: 1px solid #0f3460;
+  }
+  .card h3 {
+    font-size: 14px;
+    color: #e94560;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .my-id {
+    font-size: 22px;
+    font-weight: bold;
+    color: #0ff;
+    word-break: break-all;
+    cursor: pointer;
+    padding: 8px 12px;
+    background: #0a0a23;
+    border-radius: 8px;
+    text-align: center;
+    transition: background 0.2s;
+    user-select: all;
+  }
+  .my-id:hover { background: #1a1a3e; }
+  .my-id.hint::after {
+    content: ' (点击复制)';
+    font-size: 12px;
+    color: #666;
+  }
+  input[type="text"] {
+    width: 100%;
+    padding: 10px 14px;
+    border: 2px solid #0f3460;
+    border-radius: 8px;
+    background: #0a0a23;
+    color: #fff;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="text"]:focus { border-color: #e94560; }
+  .btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+    margin-top: 8px;
+  }
+  .btn-primary {
+    background: linear-gradient(135deg, #e94560, #c23152);
+    color: #fff;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(233,69,96,0.4); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-secondary {
+    background: #0f3460;
+    color: #ccc;
+  }
+  .btn-secondary:hover { background: #1a4a7a; }
+  .btn-danger {
+    background: linear-gradient(135deg, #c0392b, #96281b);
+    color: #fff;
+  }
+  .btn-small {
+    padding: 6px 12px;
+    font-size: 12px;
+    width: auto;
+    margin-top: 0;
+  }
+
+  /* 棋盘区域 */
+  .board-area {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 16px;
+    padding: 10px 20px;
+    background: #16213e;
+    border-radius: 10px;
+    border: 1px solid #0f3460;
+    min-width: 400px;
+    justify-content: center;
+  }
+  .stone-indicator {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    display: inline-block;
+    vertical-align: middle;
+  }
+  .stone-black {
+    background: radial-gradient(circle at 35% 35%, #555, #111);
+    box-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+  }
+  .stone-white {
+    background: radial-gradient(circle at 35% 35%, #fff, #ccc);
+    box-shadow: 1px 1px 3px rgba(0,0,0,0.3);
+  }
+  canvas {
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    cursor: pointer;
+  }
+  canvas.disabled { cursor: not-allowed; }
+
+  /* 日志 */
+  .log-area {
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 13px;
+    line-height: 1.8;
+  }
+  .log-area::-webkit-scrollbar { width: 4px; }
+  .log-area::-webkit-scrollbar-thumb { background: #0f3460; border-radius: 2px; }
+  .log-entry { padding: 2px 0; border-bottom: 1px solid #0a0a23; }
+  .log-entry.sys { color: #e94560; }
+  .log-entry.move { color: #0ff; }
+
+  /* 连接状态 */
+  .conn-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+  }
+  .dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dot.offline { background: #666; }
+  .dot.connecting { background: #f39c12; animation: pulse 1s infinite; }
+  .dot.online { background: #2ecc71; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .board-size-selector {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .board-size-selector label {
+    flex: 1;
+    text-align: center;
+    padding: 6px;
+    background: #0a0a23;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    border: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  .board-size-selector input { display: none; }
+  .board-size-selector input:checked + label {
+    border-color: #e94560;
+    color: #e94560;
+  }
+
+  .captures {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 14px;
+  }
+  .action-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .action-buttons .btn { flex: 1; margin-top: 0; }
+
+  .toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100px);
+    background: #2ecc71;
+    color: #fff;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: transform 0.3s ease;
+    z-index: 999;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  .overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    backdrop-filter: blur(4px);
+  }
+  .overlay.hidden { display: none; }
+  .modal {
+    background: #16213e;
+    border-radius: 16px;
+    padding: 32px;
+    text-align: center;
+    border: 1px solid #0f3460;
+    max-width: 400px;
+  }
+  .modal h2 { color: #e94560; margin-bottom: 16px; }
+  .modal p { margin-bottom: 20px; color: #ccc; line-height: 1.6; }
+
+  @media (max-width: 768px) {
+    .container { flex-direction: column; align-items: center; }
+    .side-panel { width: 100%; max-width: 400px; }
+    .status-bar { min-width: auto; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- 左侧控制面板 -->
+  <div class="side-panel">
+    <!-- 连接卡片 -->
+    <div class="card">
+      <h3>🔗 联机对战</h3>
+      <div class="conn-status" style="margin-bottom:12px">
+        <span class="dot offline" id="dotStatus"></span>
+        <span id="connText">未连接</span>
+      </div>
+      <div style="margin-bottom:12px">
+        <div style="font-size:12px;color:#888;margin-bottom:4px">你的ID（发给对手）</div>
+        <div class="my-id hint" id="myId" onclick="copyId()">连接中...</div>
+      </div>
+      <div>
+        <input type="text" id="remoteId" placeholder="输入对方ID并连接">
+        <button class="btn btn-primary" id="btnConnect" onclick="connectTo()" disabled>加入对局</button>
+      </div>
+    </div>
+
+    <!-- 棋盘设置 -->
+    <div class="card">
+      <h3>⚙️ 棋盘设置</h3>
+      <div class="board-size-selector">
+        <input type="radio" name="bsize" id="s9" value="9">
+        <label for="s9">9×9</label>
+        <input type="radio" name="bsize" id="s13" value="13">
+        <label for="s13">13×13</label>
+        <input type="radio" name="bsize" id="s19" value="19" checked>
+        <label for="s19">19×19</label>
+      </div>
+      <button class="btn btn-secondary" onclick="changeBoardSize()">应用尺寸（需重新连接）</button>
+    </div>
+
+    <!-- 对局操作 -->
+    <div class="card">
+      <h3>🎮 对局操作</h3>
+      <div class="captures">
+        <span>⚫ 黑方提子: <strong id="capBlack">0</strong></span>
+        <span>⚪ 白方提子: <strong id="capWhite">0</strong></span>
+      </div>
+      <div class="action-buttons">
+        <button class="btn btn-secondary" onclick="passMove()">停一手</button>
+        <button class="btn btn-danger" onclick="resignGame()">认输</button>
+      </div>
+      <button class="btn btn-secondary" onclick="requestUndo()" style="margin-top:6px">悔棋请求</button>
+    </div>
+
+    <!-- 日志 -->
+    <div class="card">
+      <h3>📜 对局记录</h3>
+      <div class="log-area" id="logArea"></div>
+    </div>
+  </div>
+
+  <!-- 棋盘 -->
+  <div class="board-area">
+    <div class="status-bar">
+      <span id="turnIndicator" class="stone-indicator stone-black"></span>
+      <span id="turnText">等待对手加入...</span>
+    </div>
+    <canvas id="board"></canvas>
+  </div>
+</div>
+
+<!-- 结束弹窗 -->
+<div class="overlay hidden" id="endOverlay">
+  <div class="modal">
+    <h2 id="endTitle">对局结束</h2>
+    <p id="endMsg"></p>
+    <button class="btn btn-primary" onclick="closeEndModal()">知道了</button>
+  </div>
+</div>
+
+<!-- 提示弹窗 -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ========================================
+// 全局状态
+// ========================================
+let peer = null;
+let conn = null;
+let isHost = false;       // true = 房主（黑棋），false = 加入者（白棋）
+let myColor = 0;          // 1=黑, 2=白
+let currentTurn = 1;      // 1=黑先
+let boardSize = 19;
+let board = [];
+let history = [];         // 历史记录（用于悔棋）
+let capturedBy = { 1: 0, 2: 0 }; // 各方提子数
+let lastMove = null;
+let prevBoardState = null; // 用于打劫检测
+let passCount = 0;
+let gameOver = false;
+let moveCount = 0;
+
+// Canvas 相关
+const canvas = document.getElementById('board');
+const ctx = canvas.getContext('2d');
+let cellSize, padding, boardPx;
+
+// ========================================
+// 初始化
+// ========================================
+function init() {
+  changeBoardSize();
+  initPeer();
+}
+
+function initPeer() {
+  peer = new Peer();
+
+  peer.on('open', (id) => {
+    const el = document.getElementById('myId');
+    el.textContent = id;
+    document.getElementById('btnConnect').disabled = false;
+    updateStatus('offline', '等待对手加入...');
+    addLog('✅ 已上线，将你的ID发给对手', 'sys');
+  });
+
+  peer.on('connection', (connection) => {
+    if (conn) {
+      connection.close();
+      return;
+    }
+    isHost = true;
+    conn = connection;
+    setupConnection();
+  });
+
+  peer.on('error', (err) => {
+    addLog('⚠️ ' + err.message, 'sys');
+    if (err.type === 'peer-unavailable') {
+      showToast('找不到该ID，请确认对方已上线');
+    }
+  });
+
+  peer.on('disconnected', () => {
+    addLog('⚠️ 与信令服务器断开，尝试重连...', 'sys');
+    peer.reconnect();
+  });
+}
+
+function connectTo() {
+  const remoteId = document.getElementById('remoteId').value.trim();
+  if (!remoteId) return;
+  if (remoteId === peer.id) return showToast('不能连接自己');
+
+  isHost = false;
+  updateStatus('connecting', '正在连接...');
+  addLog('📡 正在连接 ' + remoteId + '...', 'sys');
+  conn = peer.connect(remoteId, { reliable: true });
+  setupConnection();
+}
+
+function setupConnection() {
+  conn.on('open', () => {
+    myColor = isHost ? 1 : 2;
+    currentTurn = 1;
+    gameOver = false;
+    passCount = 0;
+    moveCount = 0;
+    resetBoard();
+
+    updateStatus('online', '已连接 - 你是' + (myColor === 1 ? '⚫黑棋' : '⚪白棋'));
+    addLog('🎉 对局开始！你执' + (myColor === 1 ? '黑' : '白'), 'sys');
+
+    // 同步棋盘大小
+    send({ type: 'init', boardSize: boardSize });
+    updateTurnDisplay();
+    drawBoard();
+  });
+
+  conn.on('data', (data) => {
+    handleMessage(data);
+  });
+
+  conn.on('close', () => {
+    updateStatus('offline', '对手已断开');
+    addLog('❌ 对手已断开连接', 'sys');
+    conn = null;
+    gameOver = true;
+  });
+
+  conn.on('error', (err) => {
+    addLog('⚠️ 连接错误: ' + err.message, 'sys');
+  });
+}
+
+// ========================================
+// 网络消息处理
+// ========================================
+function send(data) {
+  if (conn && conn.open) conn.send(data);
+}
+
+function handleMessage(data) {
+  switch (data.type) {
+    case 'init':
+      boardSize = data.boardSize;
+      document.querySelector(`input[name="bsize"][value="${boardSize}"]`).checked = true;
+      resetBoard();
+      drawBoard();
+      break;
+
+    case 'move':
+      // 对手落子
+      applyMove(data.x, data.y, data.color, false);
+      break;
+
+    case 'pass':
+      handlePass(data.color, false);
+      break;
+
+    case 'resign':
+      endGame(myColor === 1 ? '白方' : '黑方', '对手认输');
+      break;
+
+    case 'undo_request':
+      if (confirm('对手请求悔棋，是否同意？')) {
+        send({ type: 'undo_accept' });
+        performUndo();
+      } else {
+        send({ type: 'undo_reject' });
+      }
+      break;
+
+    case 'undo_accept':
+      performUndo();
+      showToast('悔棋成功');
+      break;
+
+    case 'undo_reject':
+      showToast('对手拒绝了悔棋请求');
+      break;
+  }
+}
+
+// ========================================
+// 围棋核心逻辑
+// ========================================
+function resetBoard() {
+  board = Array.from({ length: boardSize }, () => Array(boardSize).fill(0));
+  history = [];
+  capturedBy = { 1: 0, 2: 0 };
+  lastMove = null;
+  prevBoardState = null;
+  passCount = 0;
+  gameOver = false;
+  moveCount = 0;
+  updateCaptures();
+}
+
+function cloneBoard(b) {
+  return b.map(row => [...row]);
+}
+
+function boardToString(b) {
+  return b.map(r => r.join('')).join('|');
+}
+
+// 获取相邻位置
+function neighbors(x, y) {
+  const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+  return dirs
+    .map(([dx, dy]) => [x + dx, y + dy])
+    .filter(([nx, ny]) => nx >= 0 && nx < boardSize && ny >= 0 && ny < boardSize);
+}
+
+// 获取棋子所在的连通块（flood fill）
+function getGroup(b, x, y) {
+  const color = b[x][y];
+  if (color === 0) return { stones: [], liberties: new Set() };
+
+  const visited = new Set();
+  const stones = [];
+  const liberties = new Set();
+  const stack = [[x, y]];
+
+  while (stack.length) {
+    const [cx, cy] = stack.pop();
+    const key = cx * boardSize + cy;
+    if (visited.has(key)) continue;
+    visited.add(key);
+
+    if (b[cx][cy] === color) {
+      stones.push([cx, cy]);
+      for (const [nx, ny] of neighbors(cx, cy)) {
+        const nkey = nx * boardSize + ny;
+        if (b[nx][ny] === 0) liberties.add(nkey);
+        else if (b[nx][ny] === color && !visited.has(nkey)) stack.push([nx, ny]);
+      }
+    }
+  }
+  return { stones, liberties };
+}
+
+// 尝试落子
+function tryPlaceStone(x, y, color) {
+  if (gameOver) return false;
+  if (currentTurn !== color) return false;
+  if (color !== myColor) return false;
+  if (board[x][y] !== 0) return false;
+
+  // 保存状态用于悔棋
+  const savedState = {
+    board: cloneBoard(board),
+    capturedBy: { ...capturedBy },
+    lastMove: lastMove ? [...lastMove] : null,
+    prevBoardState: prevBoardState,
+    passCount: passCount,
+    currentTurn: currentTurn,
+    moveCount: moveCount
+  };
+
+  // 模拟落子
+  const testBoard = cloneBoard(board);
+  testBoard[x][y] = color;
+  const opponent = color === 1 ? 2 : 1;
+  let captured = 0;
+
+  // 检查提子
+  for (const [nx, ny] of neighbors(x, y)) {
+    if (testBoard[nx][ny] === opponent) {
+      const group = getGroup(testBoard, nx, ny);
+      if (group.liberties.size === 0) {
+        for (const [sx, sy] of group.stones) {
+          testBoard[sx][sy] = 0;
+          captured++;
+        }
+      }
+    }
+  }
+
+  // 检查自杀规则
+  const selfGroup = getGroup(testBoard, x, y);
+  if (selfGroup.liberties.size === 0) {
+    showToast('此处不可落子（自杀禁着）');
+    return false;
+  }
+
+  // 打劫检测
+  if (prevBoardState && boardToString(testBoard) === prevBoardState) {
+    showToast('打劫禁着，请先在别处落子');
+    return false;
+  }
+
+  // 正式落子
+  history.push(savedState);
+  prevBoardState = boardToString(board);
+  board = testBoard;
+  capturedBy[color] += captured;
+  lastMove = [x, y];
+  passCount = 0;
+  moveCount++;
+
+  applyMoveVisual(x, y, color, true);
+  return true;
+}
+
+// 执行落子（本地或远程）
+function applyMove(x, y, color, isLocal) {
+  if (!isLocal) {
+    // 远程落子，直接更新棋盘
+    const savedState = {
+      board: cloneBoard(board),
+      capturedBy: { ...capturedBy },
+      lastMove: lastMove ? [...lastMove] : null,
+      prevBoardState: prevBoardState,
+      passCount: passCount,
+      currentTurn: currentTurn,
+      moveCount: moveCount
+    };
+    history.push(savedState);
+
+    prevBoardState = boardToString(board);
+    board[x][y] = color;
+    const opponent = color === 1 ? 2 : 1;
+    let captured = 0;
+
+    for (const [nx, ny] of neighbors(x, y)) {
+      if (board[nx][ny] === opponent) {
+        const group = getGroup(board, nx, ny);
+        if (group.liberties.size === 0) {
+          for (const [sx, sy] of group.stones) {
+            board[sx][sy] = 0;
+            captured++;
+          }
+        }
+      }
+    }
+    capturedBy[color] += captured;
+    lastMove = [x, y];
+    passCount = 0;
+    moveCount++;
+  }
+
+  // 切换回合
+  currentTurn = currentTurn === 1 ? 2 : 1;
+  updateTurnDisplay();
+  updateCaptures();
+  drawBoard();
+
+  const colName = color === 1 ? '黑' : '白';
+  addLog(`${colName} → (${x + 1}, ${y + 1})`, 'move');
+
+  if (isLocal) {
+    send({ type: 'move', x, y, color });
+  }
+}
+
+function applyMoveVisual(x, y, color, isLocal) {
+  applyMove(x, y, color, isLocal);
+}
+
+// 停一手
+function passMove() {
+  if (gameOver || !conn || !conn.open) return;
+  if (currentTurn !== myColor) return showToast('还没轮到你');
+
+  handlePass(myColor, true);
+}
+
+function handlePass(color, isLocal) {
+  const savedState = {
+    board: cloneBoard(board),
+    capturedBy: { ...capturedBy },
+    lastMove: lastMove ? [...lastMove] : null,
+    prevBoardState: prevBoardState,
+    passCount: passCount,
+    currentTurn: currentTurn,
+    moveCount: moveCount
+  };
+  history.push(savedState);
+
+  passCount++;
+  currentTurn = currentTurn === 1 ? 2 : 1;
+  lastMove = null;
+  moveCount++;
+  prevBoardState = null;
+
+  const colName = color === 1 ? '黑' : '白';
+  addLog(`${colName} 停一手`, 'move');
+
+  if (passCount >= 2) {
+    // 双方都停手，计算胜负
+    calculateScore();
+    return;
+  }
+
+  updateTurnDisplay();
+  drawBoard();
+
+  if (isLocal) {
+    send({ type: 'pass', color });
+  }
+}
+
+// 计算胜负（简化版 - 中国规则）
+function calculateScore() {
+  gameOver = true;
+
+  // 计算领地（简化：统计各方棋子 + 围住的空点）
+  const territory = { 1: 0, 2: 0 };
+  const visited = Array.from({ length: boardSize }, () => Array(boardSize).fill(false));
+
+  // 数棋子
+  let blackStones = 0, whiteStones = 0;
+  for (let i = 0; i < boardSize; i++) {
+    for (let j = 0; j < boardSize; j++) {
+      if (board[i][j] === 1) blackStones++;
+      else if (board[i][j] === 2) whiteStones++;
+    }
+  }
+
+  // 数领地（flood fill 空区域，看相邻颜色）
+  for (let i = 0; i < boardSize; i++) {
+    for (let j = 0; j < boardSize; j++) {
+      if (board[i][j] === 0 && !visited[i][j]) {
+        // flood fill 找连通空区域
+        const region = [];
+        const adjColors = new Set();
+        const stack = [[i, j]];
+        visited[i][j] = true;
+
+        while (stack.length) {
+          const [cx, cy] = stack.pop();
+          region.push([cx, cy]);
+          for (const [nx, ny] of neighbors(cx, cy)) {
+            if (board[nx][ny] === 0 && !visited[nx][ny]) {
+              visited[nx][ny] = true;
+              stack.push([nx, ny]);
+            } else if (board[nx][ny] !== 0) {
+              adjColors.add(board[nx][ny]);
+            }
+          }
+        }
+
+        // 如果只邻接一种颜色，该空区域归该方
+        if (adjColors.size === 1) {
+          const owner = [...adjColors][0];
+          territory[owner] += region.length;
+        }
+      }
+    }
+  }
+
+  const blackScore = blackStones + territory[1];
+  const whiteScore = whiteStones + territory[2] + 6.5; // 白棋贴6.5目
+
+  const winner = blackScore > whiteScore ? '黑方' : '白方';
+  const diff = Math.abs(blackScore - whiteScore);
+
+  endGame(
+    winner + '胜',
+    `⚫ 黑: ${blackScore} 目 (${blackStones}子 + ${territory[1]}目)\n` +
+    `⚪ 白: ${whiteScore} 目 (${whiteStones}子 + ${territory[2]}目 + 6.5贴目)\n` +
+    `差距: ${diff} 目`
+  );
+}
+
+// 悔棋
+function requestUndo() {
+  if (gameOver || !conn || !conn.open) return;
+  if (history.length < 2) return showToast('没有可以悔的棋');
+  send({ type: 'undo_request' });
+  showToast('已发送悔棋请求');
+}
+
+function performUndo() {
+  // 撤销两步（自己和对手各一步）
+  if (history.length >= 2) {
+    history.pop();
+    const state = history.pop();
+    board = state.board;
+    capturedBy = state.capturedBy;
+    lastMove = state.lastMove;
+    prevBoardState = state.prevBoardState;
+    passCount = state.passCount;
+    currentTurn = state.currentTurn;
+    moveCount = state.moveCount;
+    updateTurnDisplay();
+    updateCaptures();
+    drawBoard();
+    addLog('↩️ 悔棋成功', 'sys');
+  }
+}
+
+// 认输
+function resignGame() {
+  if (gameOver || !conn || !conn.open) return;
+  if (!confirm('确定要认输吗？')) return;
+  gameOver = true;
+  const winner = myColor === 1 ? '白方' : '黑方';
+  endGame(winner + '胜', '你选择了认输');
+  send({ type: 'resign' });
+}
+
+function endGame(result, detail) {
+  gameOver = true;
+  document.getElementById('endTitle').textContent = '🏆 ' + result;
+  document.getElementById('endMsg').textContent = detail;
+  document.getElementById('endOverlay').classList.remove('hidden');
+  addLog('🏁 对局结束: ' + result, 'sys');
+}
+
+function closeEndModal() {
+  document.getElementById('endOverlay').classList.add('hidden');
+}
+
+// ========================================
+// 棋盘绘制
+// ========================================
+function initCanvas() {
+  const maxSize = Math.min(window.innerWidth - 340, window.innerHeight - 120, 620);
+  boardPx = Math.max(380, maxSize);
+  canvas.width = boardPx;
+  canvas.height = boardPx;
+  padding = boardPx * 0.05;
+  cellSize = (boardPx - 2 * padding) / (boardSize - 1);
+}
+
+function drawBoard() {
+  initCanvas();
+
+  // 木纹底色
+  const grad = ctx.createLinearGradient(0, 0, boardPx, boardPx);
+  grad.addColorStop(0, '#dcb35c');
+  grad.addColorStop(0.5, '#d4a843');
+  grad.addColorStop(1, '#c99a2e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, boardPx, boardPx);
+
+  // 木纹纹理效果
+  ctx.strokeStyle = 'rgba(0,0,0,0.03)';
+  for (let i = 0; i < boardPx; i += 3) {
+    ctx.beginPath();
+    ctx.moveTo(0, i + Math.sin(i * 0.05) * 2);
+    ctx.lineTo(boardPx, i + Math.sin(i * 0.05 + 1) * 2);
+    ctx.stroke();
+  }
+
+  // 网格线
+  ctx.strokeStyle = '#5a4520';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < boardSize; i++) {
+    const pos = padding + i * cellSize;
+    ctx.beginPath();
+    ctx.moveTo(padding, pos);
+    ctx.lineTo(padding + (boardSize - 1) * cellSize, pos);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(pos, padding);
+    ctx.lineTo(pos, padding + (boardSize - 1) * cellSize);
+    ctx.stroke();
+  }
+
+  // 星位
+  const stars = getStarPoints();
+  ctx.fillStyle = '#5a4520';
+  for (const [sx, sy] of stars) {
+    const px = padding + sx * cellSize;
+    const py = padding + sy * cellSize;
+    ctx.beginPath();
+    ctx.arc(px, py, cellSize * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 坐标
+  ctx.fillStyle = 'rgba(90,69,32,0.6)';
+  ctx.font = `${Math.max(9, cellSize * 0.32)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const letters = 'ABCDEFGHJKLMNOPQRST'; // 围棋惯例跳过I
+  for (let i = 0; i < boardSize; i++) {
+    const pos = padding + i * cellSize;
+    ctx.fillText(letters[i], pos, padding * 0.35);
+    ctx.fillText(String(boardSize - i), padding * 0.35, pos);
+  }
+
+  // 棋子
+  for (let i = 0; i < boardSize; i++) {
+    for (let j = 0; j < boardSize; j++) {
+      if (board[i][j] !== 0) {
+        drawStone(i, j, board[i][j]);
+      }
+    }
+  }
+
+  // 最后落子标记
+  if (lastMove) {
+    const [lx, ly] = lastMove;
+    const px = padding + lx * cellSize;
+    const py = padding + ly * cellSize;
+    ctx.strokeStyle = board[lx][ly] === 1 ? '#fff' : '#000';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(px, py, cellSize * 0.15, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+}
+
+function drawStone(x, y, color) {
+  const px = padding + x * cellSize;
+  const py = padding + y * cellSize;
+  const r = cellSize * 0.44;
+
+  // 阴影
+  ctx.beginPath();
+  ctx.arc(px + 2, py + 2, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fill();
+
+  // 棋子
+  const grad = ctx.createRadialGradient(px - r * 0.3, py - r * 0.3, r * 0.1, px, py, r);
+  if (color === 1) {
+    grad.addColorStop(0, '#636363');
+    grad.addColorStop(0.6, '#2a2a2a');
+    grad.addColorStop(1, '#111');
+  } else {
+    grad.addColorStop(0, '#ffffff');
+    grad.addColorStop(0.7, '#e8e8e8');
+    grad.addColorStop(1, '#c0c0c0');
+  }
+  ctx.beginPath();
+  ctx.arc(px, py, r, 0, Math.PI * 2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+}
+
+function getStarPoints() {
+  const pts = [];
+  let coords;
+  if (boardSize === 19) coords = [3, 9, 15];
+  else if (boardSize === 13) coords = [3, 6, 9];
+  else if (boardSize === 9) coords = [2, 4, 6];
+  else coords = [3, Math.floor(boardSize / 2), boardSize - 4];
+
+  for (const a of coords) {
+    for (const b of coords) {
+      pts.push([a, b]);
+    }
+  }
+  return pts;
+}
+
+// ========================================
+// 鼠标交互
+// ========================================
+canvas.addEventListener('click', (e) => {
+  if (gameOver || !conn || !conn.open) return;
+  if (currentTurn !== myColor) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top) * scaleY;
+
+  const gx = Math.round((mx - padding) / cellSize);
+  const gy = Math.round((my - padding) / cellSize);
+
+  if (gx < 0 || gx >= boardSize || gy < 0 || gy >= boardSize) return;
+
+  tryPlaceStone(gx, gy, myColor);
+});
+
+// 悬停预览
+let hoverPos = null;
+canvas.addEventListener('mousemove', (e) => {
+  if (gameOver || !conn || !conn.open || currentTurn !== myColor) {
+    canvas.classList.add('disabled');
+    return;
+  }
+  canvas.classList.remove('disabled');
+
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top) * scaleY;
+
+  const gx = Math.round((mx - padding) / cellSize);
+  const gy = Math.round((my - padding) / cellSize);
+
+  if (gx >= 0 && gx < boardSize && gy >= 0 && gy < boardSize && board[gx][gy] === 0) {
+    if (!hoverPos || hoverPos[0] !== gx || hoverPos[1] !== gy) {
+      hoverPos = [gx, gy];
+      drawBoard();
+      // 半透明预览棋子
+      const px = padding + gx * cellSize;
+      const py = padding + gy * cellSize;
+      const r = cellSize * 0.44;
+      ctx.globalAlpha = 0.4;
+      drawStone(gx, gy, myColor);
+      ctx.globalAlpha = 1.0;
+      // 重绘覆盖，只画半透明
+      drawBoard();
+      ctx.globalAlpha = 0.35;
+      ctx.beginPath();
+      const grad = ctx.createRadialGradient(px - r*0.3, py - r*0.3, r*0.1, px, py, r);
+      if (myColor === 1) {
+        grad.addColorStop(0, '#636363'); grad.addColorStop(1, '#111');
+      } else {
+        grad.addColorStop(0, '#fff'); grad.addColorStop(1, '#c0c0c0');
+      }
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    }
+  } else {
+    if (hoverPos) {
+      hoverPos = null;
+      drawBoard();
+    }
+  }
+});
+
+canvas.addEventListener('mouseleave', () => {
+  if (hoverPos) {
+    hoverPos = null;
+    drawBoard();
+  }
+});
+
+// ========================================
+// UI 辅助函数
+// ========================================
+function updateStatus(state, text) {
+  const dot = document.getElementById('dotStatus');
+  dot.className = 'dot ' + state;
+  document.getElementById('connText').textContent = text;
+}
+
+function updateTurnDisplay() {
+  const indicator = document.getElementById('turnIndicator');
+  const text = document.getElementById('turnText');
+  indicator.className = 'stone-indicator ' + (currentTurn === 1 ? 'stone-black' : 'stone-white');
+
+  if (!conn || !conn.open) {
+    text.textContent = '等待对手加入...';
+  } else if (gameOver) {
+    text.textContent = '对局已结束';
+  } else if (currentTurn === myColor) {
+    text.textContent = '轮到你落子';
+  } else {
+    text.textContent = '对手思考中...';
+  }
+}
+
+function updateCaptures() {
+  document.getElementById('capBlack').textContent = capturedBy[1];
+  document.getElementById('capWhite').textContent = capturedBy[2];
+}
+
+function addLog(text, type = '') {
+  const area = document.getElementById('logArea');
+  const div = document.createElement('div');
+  div.className = 'log-entry ' + type;
+  const time = new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  div.textContent = `[${time}] ${text}`;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+}
+
+function copyId() {
+  const id = document.getElementById('myId').textContent;
+  if (id === '连接中...') return;
+  navigator.clipboard.writeText(id).then(() => {
+    showToast('ID 已复制到剪贴板');
+  }).catch(() => {
+    // fallback
+    const ta = document.createElement('textarea');
+    ta.value = id;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('ID 已复制到剪贴板');
+  });
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function changeBoardSize() {
+  const checked = document.querySelector('input[name="bsize"]:checked');
+  if (checked) {
+    boardSize = parseInt(checked.value);
+  }
+  resetBoard();
+  drawBoard();
+  updateTurnDisplay();
+}
+
+// 支持回车连接
+document.getElementById('remoteId').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') connectTo();
+});
+
+// 窗口调整
+window.addEventListener('resize', () => drawBoard());
+
+// 启动
+init();
+</script>
+</body>
+</html>
